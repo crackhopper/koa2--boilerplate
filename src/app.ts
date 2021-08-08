@@ -1,7 +1,6 @@
 import Koa from 'koa'
-import Router from 'koa-router'
-const app = new Koa()
-const router = new Router()
+import websocketify from 'koa-websocket'
+const app = websocketify(new Koa())
 
 const views = require('koa-views')
 import json from 'koa-json'
@@ -12,8 +11,7 @@ import Debug from 'debug'
 const debug = Debug('app:app')
 import path from 'path'
 
-const config = require('./config')
-const routes = require('./routes')
+import config from './config'
 
 const port = process.env.PORT || config.port
 
@@ -31,8 +29,17 @@ app.use(bodyparser())
     map: {'njk': 'nunjucks'},
     extension: 'njk'
   }))
-  .use(router.routes())
-  .use(router.allowedMethods())
+
+import {root_router, v1_router} from './routes'
+import { GlobalState } from './state'
+app.use(root_router.routes())
+  .use(root_router.allowedMethods())
+app.use(v1_router.routes())
+  .use(v1_router.allowedMethods())
+
+// mock 拦截
+import {socket_handler} from './controller/socket_controller'
+app.ws.use(socket_handler)
 
 // logger
 app.use(async (ctx, next) => {
@@ -42,19 +49,11 @@ app.use(async (ctx, next) => {
   console.log(`${ctx.method} ${ctx.url} - $ms`)
 })
 
-router.get('/', async (ctx:any, next) => {
-  // ctx.body = 'Hello World'
-  ctx.state = {
-    title: 'Koa2'
-  }
-  await ctx.render('index', ctx.state)
-})
-
-routes(router)
 app.on('error', function(err, ctx) {
   debug(err)
 })
 
-module.exports = app.listen(config.port, () => {
+module.exports = app.listen(config.port, async () => {
+  await GlobalState.instance().async_init()
   console.log(`Listening on http://localhost:${config.port}`)
 })
